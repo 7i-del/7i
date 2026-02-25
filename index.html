@@ -166,9 +166,10 @@
     <div class="badge badge-orange" id="write-name-badge">👤 </div>
     <div class="tip">💡 اكتب سالفة حصلت معك بدون ما تذكر اسمك — الباقين راح يخمّنون!</div>
     <div id="write-input-area">
+      <div style="font-size:13px;color:var(--orange);font-weight:700;margin-bottom:10px;text-align:center" id="write-story-counter">السالفة 1 من 4</div>
       <textarea id="story-input" placeholder="كان يوم عادي وأنا رايح..."></textarea>
       <div class="err" id="write-err"></div>
-      <button class="btn btn-primary" onclick="submitStory()">إرسال السالفة ✓</button>
+      <button class="btn btn-primary" onclick="submitStory()" id="submit-story-btn">إرسال السالفة ✓</button>
     </div>
     <div id="write-wait-area" class="waiting" style="display:none">
       <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
@@ -288,9 +289,10 @@ async function roomSet(code, roomData) {
 //  Game State
 // ══════════════════════════════════════════
 const AVATARS = ['😎','🤩','😂','🥳','😏','🤔','😜','🙃','🦊','🐯'];
+const STORIES_PER_PLAYER = 4;
 
 let myName = '', roomCode = '', amHost = false, room = null;
-let submitted = false, guessedThisRound = false;
+let myStories = [], currentStoryNum = 0, guessedThisRound = false;
 let shuffledOpts = [], lastStoryIdx = -1, pollTimer = null;
 let currentScreen = 'home';
 
@@ -342,18 +344,18 @@ function applyRoomState(r) {
   }
 
   if (r.phase === 'writing' && currentScreen !== 'write') {
-    submitted = false;
-    document.getElementById('story-input').value = '';
+    myStories = []; currentStoryNum = 0;
     renderWrite();
     showScreen('write');
   }
 
   if (r.phase === 'writing' && amHost) {
-    const allDone = r.players.every(p => p.storySubmitted);
-    if (allDone && r.stories.length === r.players.length) {
+    const totalExpected = r.players.length * STORIES_PER_PLAYER;
+    const allDone = r.players.every(p => (p.storiesSubmitted || 0) >= STORIES_PER_PLAYER);
+    if (allDone && r.stories.length >= totalExpected) {
       autoStartGuessing();
     }
-    if (submitted) updateWriteWait();
+    if (currentStoryNum >= STORIES_PER_PLAYER) updateWriteWait();
   }
 
   if (r.phase === 'guessing') {
@@ -379,6 +381,8 @@ function applyRoomState(r) {
 async function autoStartGuessing() {
   const fresh = await roomGet(roomCode);
   if (!fresh || fresh.phase !== 'writing') return;
+  const totalExpected = fresh.players.length * STORIES_PER_PLAYER;
+  if (fresh.stories.length < totalExpected) return;
   fresh.shuffledStories = [...fresh.stories].sort(() => Math.random() - 0.5);
   fresh.currentStory = 0;
   fresh.phase = 'guessing';
@@ -476,10 +480,9 @@ async function startGame() {
   const r = await roomGet(roomCode);
   if (!r) return;
   r.phase = 'writing'; r.stories = []; r.shuffledStories = []; r.guesses = {}; r.currentStory = 0;
-  r.players.forEach(p => { p.storySubmitted = false; r.scores[p.name] = 0; });
+  r.players.forEach(p => { p.storiesSubmitted = 0; r.scores[p.name] = 0; });
   await roomSet(roomCode, r);
-  room = r; submitted = false;
-  document.getElementById('story-input').value = '';
+  room = r; myStories = []; currentStoryNum = 0;
   renderWrite(); showScreen('write');
 }
 
@@ -488,14 +491,21 @@ async function startGame() {
 // ══════════════════════════════════════════
 function renderWrite() {
   document.getElementById('write-name-badge').textContent = '👤 ' + myName;
-  document.getElementById('write-input-area').style.display = submitted ? 'none' : 'block';
-  document.getElementById('write-wait-area').style.display = submitted ? 'block' : 'none';
+  const done = currentStoryNum >= STORIES_PER_PLAYER;
+  document.getElementById('write-input-area').style.display = done ? 'none' : 'block';
+  document.getElementById('write-wait-area').style.display = done ? 'block' : 'none';
+  if (!done) {
+    document.getElementById('story-input').value = '';
+    document.getElementById('write-story-counter').textContent = `السالفة ${currentStoryNum + 1} من ${STORIES_PER_PLAYER}`;
+    const isLast = currentStoryNum === STORIES_PER_PLAYER - 1;
+    document.getElementById('submit-story-btn').textContent = isLast ? 'إرسال آخر سالفة ✓' : `إرسال والتالي (${currentStoryNum + 1}/${STORIES_PER_PLAYER}) →`;
+  }
 }
 function updateWriteWait() {
-  if (!room || !submitted) return;
-  const done = room.players.filter(p => p.storySubmitted).length;
+  if (!room) return;
+  const done = room.players.filter(p => (p.storiesSubmitted || 0) >= STORIES_PER_PLAYER).length;
   document.getElementById('write-wait-text').textContent =
-    `تم الإرسال! بانتظار بقية اللاعبين... (${done}/${room.players.length})`;
+    `أرسلت كل سوالفك! بانتظار بقية اللاعبين... (${done}/${room.players.length})`;
 }
 
 // ══════════════════════════════════════════
@@ -508,12 +518,13 @@ async function submitStory() {
   if (!r) return;
   r.stories.push({player: myName, text});
   const me = r.players.find(p => p.name === myName);
-  if (me) me.storySubmitted = true;
+  if (me) me.storiesSubmitted = (me.storiesSubmitted || 0) + 1;
   await roomSet(roomCode, r);
-  room = r; submitted = true;
-  document.getElementById('write-input-area').style.display = 'none';
-  document.getElementById('write-wait-area').style.display = 'block';
-  updateWriteWait();
+  room = r;
+  myStories.push(text);
+  currentStoryNum++;
+  renderWrite();
+  if (currentStoryNum >= STORIES_PER_PLAYER) updateWriteWait();
 }
 
 // ══════════════════════════════════════════
@@ -647,9 +658,10 @@ function renderScores() {
 async function playAgain() {
   const r = await roomGet(roomCode);
   r.phase='lobby'; r.stories=[]; r.shuffledStories=[]; r.guesses={}; r.currentStory=0;
-  r.players.forEach(p => { p.storySubmitted=false; r.scores[p.name]=0; });
+  r.players.forEach(p => { p.storiesSubmitted=0; r.scores[p.name]=0; });
   await roomSet(roomCode, r);
-  room=r; lastStoryIdx=-1; renderLobby(); showScreen('lobby'); startPoll(roomCode);
+  room=r; lastStoryIdx=-1; myStories=[]; currentStoryNum=0;
+  renderLobby(); showScreen('lobby'); startPoll(roomCode);
 }
 
 // ══════════════════════════════════════════
