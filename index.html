@@ -1,46 +1,576 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة الصدارة الاحترافية</title>
-    <style>
-        body { font-family: sans-serif; background-color: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .card { background: #1e293b; padding: 20px; border-radius: 15px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
-        h1 { color: #38bdf8; }
-        input { width: 80%; padding: 10px; margin: 10px 0; border-radius: 5px; border: none; }
-        button { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .player-list { margin-top: 20px; width: 100%; }
-        .player-item { background: #334155; padding: 10px; margin: 5px 0; border-radius: 8px; display: flex; justify-content: space-between; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>🏆 لوحة النتائج</h1>
-        <input type="text" id="playerName" placeholder="اسم اللاعب...">
-        <button onclick="addPlayer()">إضافة لاعب</button>
-        <div id="players" class="player-list"></div>
+import { useState, useEffect, useRef, useCallback } from “react”;
+
+const AVATARS = [‘😎’,‘🤩’,‘😂’,‘🥳’,‘😏’,‘🤔’,‘😜’,‘🙃’,‘🦊’,‘🐯’];
+
+// ── Storage helpers ──
+async function roomGet(code) {
+try {
+const r = await window.storage.get(`room:${code}`, true);
+return r ? JSON.parse(r.value) : null;
+} catch { return null; }
+}
+async function roomSet(code, data) {
+try { await window.storage.set(`room:${code}`, JSON.stringify(data), true); }
+catch(e) { console.error(‘storage set error’, e); }
+}
+
+// ── Tiny UI atoms ──
+const Input = ({placeholder, value, onChange, style={}, maxLength, …rest}) => (
+<input
+value={value} onChange={e=>onChange(e.target.value)}
+placeholder={placeholder} maxLength={maxLength}
+style={{
+width:‘100%’, padding:‘13px 16px’,
+background:’#1e1e2e’, border:‘2px solid #2e2e45’,
+borderRadius:13, color:’#f0ede8’,
+fontFamily:‘Tajawal,sans-serif’, fontSize:16,
+outline:‘none’, direction:‘rtl’, boxSizing:‘border-box’, …style
+}}
+onFocus={e=>e.target.style.borderColor=’#ff6b35’}
+onBlur={e=>e.target.style.borderColor=’#2e2e45’}
+{…rest}
+/>
+);
+
+const Btn = ({children, onClick, variant=‘primary’, disabled, style={}}) => {
+const base = {
+width:‘100%’, padding:‘14px’, border:‘none’, borderRadius:15,
+fontFamily:‘Tajawal,sans-serif’, fontSize:17, fontWeight:700,
+cursor: disabled ? ‘not-allowed’ : ‘pointer’,
+marginTop:8, opacity: disabled ? 0.5 : 1, transition:‘all 0.2s’, …style
+};
+const variants = {
+primary: { background:‘linear-gradient(135deg,#ff6b35,#ff8c5a)’, color:’#fff’ },
+secondary: { background:’#1e1e2e’, color:’#4ecdc4’, border:‘2px solid #2e2e45’ },
+ghost: { background:‘none’, color:’#666’, fontSize:14, padding:‘10px’, width:‘auto’ }
+};
+return <button style={{...base,...variants[variant]}} onClick={disabled?null:onClick}>{children}</button>;
+};
+
+const Card = ({children, style={}}) => (
+
+  <div style={{
+    background:'#16161f', borderRadius:26, padding:'32px 28px',
+    boxShadow:'0 8px 40px rgba(0,0,0,0.5)', border:'1px solid #2e2e45',
+    position:'relative', overflow:'hidden', ...style
+  }}>
+    <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:'linear-gradient(90deg,#ff6b35,#4ecdc4)'}}/>
+    {children}
+  </div>
+);
+
+const ErrMsg = ({msg}) => msg ? (
+
+  <div style={{background:'rgba(231,76,60,0.12)',border:'1px solid rgba(231,76,60,0.3)',color:'#e74c3c',
+    padding:'11px 15px',borderRadius:12,fontSize:14,textAlign:'center',marginBottom:12}}>
+    {msg}
+  </div>
+) : null;
+
+const Dots = () => (
+<span style={{display:‘flex’,gap:5,justifyContent:‘center’,marginBottom:8}}>
+{[0,1,2].map(i=>(
+<span key={i} style={{width:8,height:8,borderRadius:‘50%’,
+background:[’#ff6b35’,’#4ecdc4’,’#ffe66d’][i],
+animation:‘pulse 1.2s ease infinite’, animationDelay:`${i*0.2}s`}}/>
+))}
+</span>
+);
+
+export default function App() {
+const [screen, setScreen] = useState(‘home’); // home|lobby|write|guess|scores
+const [myName, setMyName] = useState(’’);
+const [nameInput, setNameInput] = useState(’’);
+const [codeInput, setCodeInput] = useState(’’);
+const [roomCode, setRoomCode] = useState(’’);
+const [amHost, setAmHost] = useState(false);
+const [room, setRoom] = useState(null);
+const [err, setErr] = useState(’’);
+const [storyText, setStoryText] = useState(’’);
+const [submitted, setSubmitted] = useState(false);
+const [guessedThisRound, setGuessedThisRound] = useState(false);
+const [toastMsg, setToastMsg] = useState(’’);
+const [toastType, setToastType] = useState(’’);
+const [copyLabel, setCopyLabel] = useState(‘نسخ’);
+const [shuffledOpts, setShuffledOpts] = useState([]);
+const pollRef = useRef(null);
+const lastStoryRef = useRef(-1);
+
+const showErr = (msg) => { setErr(msg); setTimeout(()=>setErr(’’),4000); };
+
+// ── Poll ──
+const startPoll = useCallback((code) => {
+if (pollRef.current) clearInterval(pollRef.current);
+pollRef.current = setInterval(async () => {
+const r = await roomGet(code);
+if (r) setRoom(r);
+}, 2000);
+}, []);
+
+const stopPoll = () => { if(pollRef.current){clearInterval(pollRef.current);pollRef.current=null;} };
+
+// ── React to room changes ──
+useEffect(() => {
+if (!room) return;
+if (room.phase === ‘writing’ && screen !== ‘write’) {
+setScreen(‘write’);
+setSubmitted(false);
+setStoryText(’’);
+}
+if (room.phase === ‘guessing’) {
+const idx = room.currentStory;
+if (idx !== lastStoryRef.current || screen !== ‘guess’) {
+lastStoryRef.current = idx;
+setGuessedThisRound(false);
+setToastMsg(’’);
+setShuffledOpts([…room.players].sort(()=>Math.random()-0.5));
+setScreen(‘guess’);
+}
+}
+if (room.phase === ‘scores’ && screen !== ‘scores’) {
+stopPoll();
+setScreen(‘scores’);
+}
+}, [room]);
+
+// ── Host: auto-start guessing when all wrote ──
+useEffect(() => {
+if (!room || !amHost || room.phase !== ‘writing’) return;
+const allDone = room.players.every(p=>p.storySubmitted);
+if (allDone && room.stories.length === room.players.length) {
+(async()=>{
+const fresh = await roomGet(roomCode);
+if (!fresh || fresh.phase !== ‘writing’) return;
+fresh.shuffledStories = […fresh.stories].sort(()=>Math.random()-0.5);
+fresh.currentStory = 0;
+fresh.phase = ‘guessing’;
+fresh.guesses = {};
+await roomSet(roomCode, fresh);
+})();
+}
+}, [room, amHost]);
+
+// ── CREATE ──
+const createRoom = async () => {
+const name = nameInput.trim();
+if (!name) { showErr(‘⚠️ اكتب اسمك أولاً’); return; }
+const code = Math.floor(1000+Math.random()*9000).toString();
+const r = {
+code, host: name, phase: ‘lobby’,
+players: [{name, avatar: AVATARS[0], storySubmitted: false}],
+stories: [], shuffledStories: [], scores: {[name]:0},
+currentStory: 0, guesses: {}, created: Date.now()
+};
+await roomSet(code, r);
+setMyName(name); setRoomCode(code); setAmHost(true); setRoom(r);
+setScreen(‘lobby’);
+startPoll(code);
+};
+
+// ── JOIN ──
+const joinRoom = async () => {
+const name = nameInput.trim();
+const code = codeInput.trim();
+if (!name) { showErr(‘⚠️ اكتب اسمك أولاً’); return; }
+if (code.length !== 4) { showErr(‘⚠️ أدخل رمز الغرفة (4 أرقام)’); return; }
+const r = await roomGet(code);
+if (!r) { showErr(‘❌ الغرفة مو موجودة’); return; }
+if (r.phase !== ‘lobby’) { showErr(‘⚠️ اللعبة بدأت’); return; }
+if (r.players.find(p=>p.name===name)) { showErr(‘⚠️ الاسم موجود، غيّر اسمك’); return; }
+const avatar = AVATARS[r.players.length % AVATARS.length];
+r.players.push({name, avatar, storySubmitted: false});
+r.scores[name] = 0;
+await roomSet(code, r);
+setMyName(name); setRoomCode(code); setAmHost(false); setRoom(r);
+setScreen(‘lobby’);
+startPoll(code);
+};
+
+// ── START GAME ──
+const startGame = async () => {
+const r = await roomGet(roomCode);
+if (!r) return;
+r.phase = ‘writing’;
+r.stories = []; r.shuffledStories = []; r.guesses = {}; r.currentStory = 0;
+r.players.forEach(p=>{p.storySubmitted=false; r.scores[p.name]=0;});
+await roomSet(roomCode, r);
+};
+
+// ── SUBMIT STORY ──
+const submitStory = async () => {
+if (storyText.trim().length < 10) { showErr(‘⚠️ اكتب سالفة أطول شوي!’); return; }
+const r = await roomGet(roomCode);
+if (!r) return;
+r.stories.push({player: myName, text: storyText.trim()});
+const me = r.players.find(p=>p.name===myName);
+if (me) me.storySubmitted = true;
+await roomSet(roomCode, r);
+setRoom(r);
+setSubmitted(true);
+};
+
+// ── MAKE GUESS ──
+const makeGuess = async (guessed) => {
+if (guessedThisRound || !room) return;
+setGuessedThisRound(true);
+const correct = room.shuffledStories[room.currentStory]?.player;
+const fresh = await roomGet(roomCode);
+if (!fresh.guesses) fresh.guesses = {};
+if (!fresh.guesses[room.currentStory]) fresh.guesses[room.currentStory] = {};
+fresh.guesses[room.currentStory][myName] = guessed;
+if (guessed === correct && myName !== correct) {
+fresh.scores[myName] = (fresh.scores[myName]||0) + 1;
+}
+await roomSet(roomCode, fresh);
+setRoom(fresh);
+if (guessed === correct) {
+setToastMsg(`✅ صح! السالفة لـ ${correct} 🎉`); setToastType(‘win’);
+} else {
+setToastMsg(`❌ غلط! السالفة كانت لـ ${correct} 😅`); setToastType(‘lose’);
+}
+};
+
+// ── NEXT ROUND ──
+const nextRound = async () => {
+if (!amHost) return;
+const r = await roomGet(roomCode);
+const nextIdx = r.currentStory + 1;
+if (nextIdx >= r.shuffledStories.length) r.phase = ‘scores’;
+else { r.currentStory = nextIdx; r.phase = ‘guessing’; }
+await roomSet(roomCode, r);
+};
+
+// ── PLAY AGAIN ──
+const playAgain = async () => {
+const r = await roomGet(roomCode);
+r.phase=‘lobby’; r.stories=[]; r.shuffledStories=[]; r.guesses={}; r.currentStory=0;
+r.players.forEach(p=>{p.storySubmitted=false; r.scores[p.name]=0;});
+await roomSet(roomCode, r);
+setRoom(r); lastStoryRef.current=-1;
+setScreen(‘lobby’); startPoll(roomCode);
+};
+
+const goHome = () => {
+stopPoll();
+setMyName(’’); setRoomCode(’’); setAmHost(false); setRoom(null);
+setNameInput(’’); setCodeInput(’’);
+lastStoryRef.current=-1; setScreen(‘home’);
+};
+
+const copyCode = () => {
+navigator.clipboard.writeText(roomCode).then(()=>{
+setCopyLabel(‘✓ تم’); setTimeout(()=>setCopyLabel(‘نسخ’),2000);
+});
+};
+
+// ── CSS animations injected ──
+useEffect(()=>{
+const s=document.createElement(‘style’);
+s.textContent=`@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap'); @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} @keyframes pop{0%{transform:scale(0.85);opacity:0}70%{transform:scale(1.04)}100%{transform:scale(1);opacity:1}} @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`;
+document.head.appendChild(s);
+return ()=>s.remove();
+},[]);
+
+const wrap = {
+minHeight:‘100vh’, background:’#0f0f15’,
+backgroundImage:‘radial-gradient(ellipse at 20% 20%,rgba(255,107,53,0.06) 0%,transparent 60%),radial-gradient(ellipse at 80% 80%,rgba(78,205,196,0.06) 0%,transparent 60%)’,
+display:‘flex’, alignItems:‘center’, justifyContent:‘center’, padding:16,
+fontFamily:‘Tajawal,sans-serif’, direction:‘rtl’
+};
+const inner = {width:‘100%’, maxWidth:500, animation:‘fadeUp 0.4s ease’};
+
+// ════════════════════════════════
+//  SCREENS
+// ════════════════════════════════
+
+// HOME
+if (screen === ‘home’) return (
+<div style={wrap}><div style={inner}>
+<Card>
+<div style={{textAlign:‘center’,marginBottom:28}}>
+<div style={{fontSize:60,marginBottom:10}}>🎭</div>
+<h1 style={{fontSize:26,fontWeight:900,background:‘linear-gradient(135deg,#ff6b35,#4ecdc4)’,
+WebkitBackgroundClip:‘text’,WebkitTextFillColor:‘transparent’,backgroundClip:‘text’,margin:0}}>
+خمّن صاحب السالفة
+</h1>
+<p style={{color:’#666’,fontSize:14,marginTop:6}}>كل واحد على جواله — كل واحد يكتب سالفته!</p>
+</div>
+
+```
+    <div style={{marginBottom:16}}>
+      <label style={{display:'block',fontSize:12,fontWeight:700,color:'#666',marginBottom:8,textTransform:'uppercase',letterSpacing:0.5}}>اسمك في اللعبة</label>
+      <Input value={nameInput} onChange={setNameInput} placeholder="اكتب اسمك..." maxLength={20}/>
     </div>
 
-    <script>
-        let players = JSON.parse(localStorage.getItem('players')) || [];
-        function render() {
-            const container = document.getElementById('players');
-            container.innerHTML = players.map((p, i) => `
-                <div class="player-item">
-                    <span>${p.name}</span>
-                    <span>${p.score} نقطة</span>
-                    <button onclick="addScore(${i})">+1</button>
-                </div>
-            `).join('');
-            localStorage.setItem('players', JSON.stringify(players));
-        }
-        function addPlayer() {
-            const name = document.getElementById('playerName').value;
-            if(name) { players.push({name, score: 0}); render(); document.getElementById('playerName').value = ''; }
-        }
-        function addScore(i) { players[i].score++; render(); }
-        render();
-    </script>
-</body>
-</html>
+    <ErrMsg msg={err}/>
+    <Btn onClick={createRoom}>🏠 أنشئ غرفة جديدة</Btn>
+
+    <div style={{display:'flex',alignItems:'center',gap:12,margin:'18px 0',color:'#444',fontSize:13}}>
+      <div style={{flex:1,height:1,background:'#2e2e45'}}/> أو <div style={{flex:1,height:1,background:'#2e2e45'}}/>
+    </div>
+
+    <div style={{marginBottom:16}}>
+      <label style={{display:'block',fontSize:12,fontWeight:700,color:'#666',marginBottom:8,textTransform:'uppercase',letterSpacing:0.5}}>رمز الغرفة</label>
+      <Input value={codeInput} onChange={v=>setCodeInput(v.replace(/\D/g,''))}
+        placeholder="مثل: 4829" maxLength={4}
+        style={{textAlign:'center',fontSize:26,letterSpacing:8,fontWeight:900}}/>
+    </div>
+    <Btn onClick={joinRoom} variant="secondary">🚪 ادخل الغرفة</Btn>
+  </Card>
+</div></div>
+```
+
+);
+
+// LOBBY
+if (screen === ‘lobby’) {
+const r = room;
+return (
+<div style={wrap}><div style={inner}>
+<Card>
+{/* Room code */}
+<div style={{background:’#1e1e2e’,border:‘2px solid #ffe66d’,borderRadius:16,padding:18,
+textAlign:‘center’,marginBottom:20,position:‘relative’}}>
+<div style={{fontSize:11,color:’#666’,marginBottom:4}}>رمز الغرفة — شاركه مع أصدقائك</div>
+<div style={{fontSize:40,fontWeight:900,letterSpacing:10,color:’#ffe66d’}}>{roomCode}</div>
+<button onClick={copyCode} style={{position:‘absolute’,top:10,left:10,background:’#2e2e45’,
+border:‘none’,color:’#888’,padding:‘5px 11px’,borderRadius:7,fontSize:12,cursor:‘pointer’,
+fontFamily:‘Tajawal,sans-serif’}}>
+{copyLabel}
+</button>
+</div>
+
+```
+      <div style={{fontSize:12,fontWeight:700,color:'#555',textTransform:'uppercase',letterSpacing:0.5,marginBottom:10}}>
+        اللاعبون ({r?.players?.length || 0})
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
+        {r?.players?.map((p,i)=>(
+          <div key={p.name} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 15px',
+            background:'#1e1e2e',borderRadius:12,border:'1px solid #2e2e45',animation:'pop 0.3s ease'}}>
+            <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,#ff6b35,#4ecdc4)',
+              display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{p.avatar}</div>
+            <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
+            <div style={{marginRight:'auto',fontSize:12,color: p.name===r.host ? '#ffe66d' : '#4ecdc4'}}>
+              {p.name===r.host ? '👑 مضيف' : '✅ جاهز'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <ErrMsg msg={err}/>
+
+      {amHost ? (
+        <Btn onClick={startGame} disabled={!r || r.players.length < 2}>
+          {r?.players?.length < 2 ? '⏳ انتظر لاعب ثاني...' : `🚀 ابدأ اللعبة (${r?.players?.length} لاعبين)`}
+        </Btn>
+      ) : (
+        <div style={{textAlign:'center',padding:'16px 0'}}>
+          <Dots/>
+          <p style={{color:'#555',fontSize:14,marginTop:6}}>بانتظار المضيف يبدأ اللعبة...</p>
+        </div>
+      )}
+    </Card>
+  </div></div>
+);
+```
+
+}
+
+// WRITE
+if (screen === ‘write’) return (
+<div style={wrap}><div style={inner}>
+<Card>
+<div style={{display:‘flex’,justifyContent:‘space-between’,alignItems:‘center’,
+padding:‘9px 14px’,background:’#1e1e2e’,borderRadius:11,marginBottom:20,border:‘1px solid #2e2e45’}}>
+<span style={{fontSize:13,color:’#555’}}>اكتب سالفتك</span>
+<span style={{background:‘rgba(255,107,53,0.18)’,color:’#ff6b35’,padding:‘3px 11px’,
+borderRadius:20,fontSize:12,fontWeight:700}}>دورك! 👋</span>
+</div>
+
+```
+    <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(255,107,53,0.12)',
+      color:'#ff6b35',padding:'4px 13px',borderRadius:20,fontSize:13,fontWeight:700,marginBottom:14}}>
+      👤 {myName}
+    </div>
+
+    <div style={{background:'rgba(78,205,196,0.08)',border:'1px solid rgba(78,205,196,0.2)',
+      borderRadius:11,padding:'11px 14px',fontSize:13,color:'#4ecdc4',marginBottom:16}}>
+      💡 اكتب سالفة حصلت معك بدون ما تذكر اسمك — الباقين راح يخمّنون!
+    </div>
+
+    {!submitted ? (
+      <>
+        <textarea value={storyText} onChange={e=>setStoryText(e.target.value)}
+          placeholder="كان يوم عادي وأنا رايح..."
+          style={{width:'100%',padding:'14px 16px',background:'#1e1e2e',border:'2px solid #2e2e45',
+            borderRadius:13,color:'#f0ede8',fontFamily:'Tajawal,sans-serif',fontSize:15,
+            minHeight:130,resize:'vertical',outline:'none',direction:'rtl',lineHeight:1.7,
+            boxSizing:'border-box',marginBottom:16}}
+          onFocus={e=>e.target.style.borderColor='#4ecdc4'}
+          onBlur={e=>e.target.style.borderColor='#2e2e45'}
+        />
+        <ErrMsg msg={err}/>
+        <Btn onClick={submitStory}>إرسال السالفة ✓</Btn>
+      </>
+    ) : (
+      <div style={{textAlign:'center',padding:'24px 0'}}>
+        <Dots/>
+        <p style={{color:'#555',fontSize:14,marginTop:8}}>
+          تم الإرسال! بانتظار بقية اللاعبين...
+          {room && ` (${room.players.filter(p=>p.storySubmitted).length}/${room.players.length})`}
+        </p>
+      </div>
+    )}
+  </Card>
+</div></div>
+```
+
+);
+
+// GUESS
+if (screen === ‘guess’ && room) {
+const storyIdx = room.currentStory;
+const story = room.shuffledStories?.[storyIdx];
+const total = room.shuffledStories?.length || 1;
+const guessCount = Object.keys(room.guesses?.[storyIdx]||{}).length;
+const voters = room.players.length - 1;
+const myGuess = room.guesses?.[storyIdx]?.[myName];
+const correct = story?.player;
+const showNext = amHost || guessCount >= voters || guessedThisRound;
+
+```
+return (
+  <div style={wrap}><div style={inner}>
+    <Card>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+        <span style={{background:'rgba(255,107,53,0.15)',color:'#ff6b35',padding:'5px 14px',
+          borderRadius:20,fontSize:13,fontWeight:700}}>
+          سالفة {storyIdx+1} من {total}
+        </span>
+        {guessedThisRound && <span style={{fontSize:12,color:'#555'}}>خمّن {guessCount}/{voters}</span>}
+      </div>
+
+      {/* Story */}
+      <div style={{background:'#1e1e2e',borderRadius:16,padding:'22px 18px',marginBottom:24,
+        border:'1px solid #2e2e45',fontSize:16,lineHeight:1.85,position:'relative'}}>
+        <div style={{fontSize:50,color:'rgba(255,107,53,0.12)',position:'absolute',top:-6,left:12,
+          lineHeight:1,fontFamily:'Georgia,serif'}}>❝</div>
+        <div style={{paddingTop:8}}>{story?.text}</div>
+      </div>
+
+      <div style={{fontSize:12,fontWeight:700,color:'#555',textTransform:'uppercase',letterSpacing:0.5,marginBottom:12}}>
+        مين صاحب هالسالفة؟
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:9,marginBottom:16}}>
+        {shuffledOpts.map((p,i)=>{
+          const isGuessed = myGuess === p.name;
+          const isCorrect = p.name === correct;
+          let style = {
+            background:'#1e1e2e', border:'2px solid #2e2e45', borderRadius:13,
+            padding:'13px 16px', display:'flex', alignItems:'center', gap:14,
+            cursor: guessedThisRound ? 'default' : 'pointer',
+            fontFamily:'Tajawal,sans-serif', fontSize:15, fontWeight:600,
+            color:'#f0ede8', textAlign:'right', width:'100%',
+            animation:`pop 0.3s ease ${i*0.05}s both`, transition:'all 0.2s'
+          };
+          if (guessedThisRound && isCorrect) { style.borderColor='#4ecdc4'; style.background='rgba(78,205,196,0.1)'; style.color='#4ecdc4'; }
+          if (guessedThisRound && isGuessed && !isCorrect) { style.borderColor='#e74c3c'; style.background='rgba(231,76,60,0.1)'; style.color='#e74c3c'; }
+
+          return (
+            <button key={p.name} style={style}
+              onClick={()=>!guessedThisRound && makeGuess(p.name)}>
+              <span style={{minWidth:30,height:30,borderRadius:8,background:'#2e2e45',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:13,fontWeight:900,color:'#555',flexShrink:0}}>
+                {i+1}
+              </span>
+              {p.name}
+              {guessedThisRound && isCorrect && <span style={{marginRight:'auto'}}>✓</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {toastMsg && (
+        <div style={{padding:'13px 18px',borderRadius:13,textAlign:'center',fontSize:15,fontWeight:700,
+          marginBottom:14,animation:'pop 0.3s ease',
+          background: toastType==='win' ? 'rgba(78,205,196,0.14)' : 'rgba(231,76,60,0.12)',
+          color: toastType==='win' ? '#4ecdc4' : '#e74c3c',
+          border: `1px solid ${toastType==='win' ? 'rgba(78,205,196,0.3)' : 'rgba(231,76,60,0.2)'}`}}>
+          {toastMsg}
+        </div>
+      )}
+
+      {showNext && guessedThisRound && amHost && (
+        <Btn onClick={nextRound}>
+          {storyIdx+1 < total ? 'التالي ←' : '🏆 النتائج'}
+        </Btn>
+      )}
+      {showNext && guessedThisRound && !amHost && guessCount >= voters && (
+        <div style={{textAlign:'center',color:'#555',fontSize:13,marginTop:8}}>
+          <Dots/><p style={{marginTop:6}}>بانتظار المضيف ينتقل للتالي...</p>
+        </div>
+      )}
+    </Card>
+  </div></div>
+);
+```
+
+}
+
+// SCORES
+if (screen === ‘scores’ && room) {
+const sorted = Object.entries(room.scores||{}).sort((a,b)=>b[1]-a[1]);
+const medals = [‘🥇’,‘🥈’,‘🥉’];
+const winner = sorted[0]?.[0];
+
+```
+return (
+  <div style={wrap}><div style={inner}>
+    <Card>
+      <div style={{textAlign:'center',marginBottom:24}}>
+        <div style={{fontSize:60,marginBottom:8}}>🏆</div>
+        <h1 style={{fontSize:24,fontWeight:900,margin:0,
+          background:'linear-gradient(135deg,#ff6b35,#ffe66d)',
+          WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>
+          النتائج النهائية
+        </h1>
+        {winner && <p style={{color:'#666',marginTop:6,fontSize:14}}>🎉 الفائز: {winner}!</p>}
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:24}}>
+        {sorted.map(([name,pts],i)=>(
+          <div key={name} style={{display:'flex',alignItems:'center',gap:14,padding:'13px 16px',
+            background: i===0 ? 'rgba(255,230,109,0.06)' : '#1e1e2e',
+            borderRadius:13, border: `1px solid ${i===0 ? '#ffe66d44' : '#2e2e45'}`,
+            animation:`pop 0.4s ease ${i*0.08}s both`}}>
+            <span style={{fontSize:22,minWidth:30,textAlign:'center'}}>{medals[i]||'🎖️'}</span>
+            <span style={{fontWeight:700,fontSize:15,flex:1}}>{name}</span>
+            <span style={{background: i===0 ? 'rgba(255,230,109,0.2)' : 'rgba(255,107,53,0.18)',
+              color: i===0 ? '#ffe66d' : '#ff6b35',
+              padding:'4px 14px',borderRadius:20,fontSize:14,fontWeight:700}}>
+              {pts} نقطة
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {amHost && <Btn onClick={playAgain}>🔁 جولة ثانية</Btn>}
+      {!amHost && (
+        <div style={{textAlign:'center',padding:'8px 0'}}>
+          <Dots/><p style={{color:'#555',fontSize:14,marginTop:6}}>بانتظار المضيف...</p>
+        </div>
+      )}
+      <Btn onClick={goHome} variant="ghost" style={{display:'block',margin:'8px auto 0'}}>الرئيسية</Btn>
+    </Card>
+  </div></div>
+);
+```
+
+}
+
+return <div style={{…wrap,color:’#666’}}>جاري التحميل…</div>;
+}
