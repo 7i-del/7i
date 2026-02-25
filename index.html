@@ -30,10 +30,7 @@
     box-shadow: 0 8px 40px rgba(0,0,0,0.5); border: 1px solid var(--border);
     position: relative; overflow: hidden; animation: fadeUp 0.4s ease;
   }
-  .card::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--orange), var(--teal));
-  }
+  .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--orange), var(--teal)); }
   .screen { display: none; }
   .screen.active { display: block; }
   input, textarea {
@@ -45,11 +42,7 @@
   input:focus, textarea:focus { border-color: var(--orange); }
   input::placeholder, textarea::placeholder { color: var(--muted); }
   textarea { min-height: 130px; resize: vertical; line-height: 1.7; }
-  .btn {
-    width: 100%; padding: 14px; border: none; border-radius: 15px;
-    font-family: 'Tajawal', sans-serif; font-size: 17px; font-weight: 700;
-    cursor: pointer; margin-top: 8px; transition: all 0.2s;
-  }
+  .btn { width: 100%; padding: 14px; border: none; border-radius: 15px; font-family: 'Tajawal', sans-serif; font-size: 17px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: all 0.2s; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: linear-gradient(135deg, var(--orange), #ff8c5a); color: #fff; }
   .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(255,107,53,0.4); }
@@ -97,7 +90,6 @@
   .waiting p { color: var(--muted); font-size: 14px; margin-top: 6px; }
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 13px; border-radius: 20px; font-size: 13px; font-weight: 700; margin-bottom: 14px; }
   .badge-orange { background: rgba(255,107,53,0.12); color: var(--orange); }
-  .badge-teal { background: rgba(78,205,196,0.12); color: var(--teal); }
   .tip { background: rgba(78,205,196,0.08); border: 1px solid rgba(78,205,196,0.2); border-radius: 11px; padding: 11px 14px; font-size: 13px; color: var(--teal); margin-bottom: 16px; }
   .row { display: flex; justify-content: space-between; align-items: center; }
   .grad-title { background: linear-gradient(135deg, var(--orange), var(--teal)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
@@ -173,7 +165,7 @@
     </div>
     <div id="write-wait-area" class="waiting" style="display:none">
       <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-      <p id="write-wait-text">تم الإرسال! بانتظار بقية اللاعبين...</p>
+      <p id="write-wait-text">أرسلت كل سوالفك! بانتظار بقية اللاعبين...</p>
     </div>
   </div>
 
@@ -223,66 +215,28 @@
 
 <script>
 // ══════════════════════════════════════════
-//  JSONBin Storage
+//  Supabase Storage
 // ══════════════════════════════════════════
-const BIN_ID  = '699f6311d0ea881f40d97019';
-const API_KEY = '$2a$10$jfFgU1HUzC5MwxyMZnXTzeR0X3YMOUHoaj7zrX5yXjoSe56rQmWky';
-const BASE    = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
-
-async function dbGet(retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const r = await fetch(`${BASE}/latest`, {
-        headers: { 'X-Master-Key': API_KEY, 'X-Bin-Meta': 'false' }
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const j = await r.json();
-      // JSONBin returns {record: {...}} or directly the object
-      return j.record !== undefined ? j.record : j;
-    } catch(e) {
-      console.warn(`dbGet attempt ${i+1} failed:`, e);
-      if (i < retries - 1) await sleep(500);
-    }
-  }
-  return {};
-}
-
-async function dbSet(data, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const r = await fetch(BASE, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-        body: JSON.stringify(data)
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return true;
-    } catch(e) {
-      console.warn(`dbSet attempt ${i+1} failed:`, e);
-      if (i < retries - 1) await sleep(500);
-    }
-  }
-  return false;
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+const SB_URL = 'https://llflcxehgyaoeeayoise.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZmxjeGVoZ3lhb2VlYXlvaXNlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwNTQyMjQsImV4cCI6MjA4NzYzMDIyNH0.Z8hWhlHdylcpQLAgEiYNYNRrKjk9S4lIjCzGg80hhOU';
+const SB_H = { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY };
 
 async function roomGet(code) {
-  const db = await dbGet();
-  console.log('📦 DB contents:', JSON.stringify(Object.keys(db)));
-  const found = db[code] || null;
-  console.log(`🔍 Room ${code}:`, found ? 'موجودة ✅' : 'مو موجودة ❌');
-  return found;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rooms?code=eq.${code}&select=data`, { headers: SB_H });
+    const rows = await r.json();
+    return rows.length ? rows[0].data : null;
+  } catch(e) { console.error('roomGet', e); return null; }
 }
 
-async function roomSet(code, roomData) {
-  // Read → modify → write with a small delay to avoid conflicts
-  await sleep(100);
-  const db = await dbGet();
-  db[code] = roomData;
-  const ok = await dbSet(db);
-  if (!ok) console.error('❌ فشل حفظ الغرفة', code);
-  return ok;
+async function roomSet(code, data) {
+  try {
+    await fetch(`${SB_URL}/rest/v1/rooms`, {
+      method: 'POST',
+      headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({ code, data, updated_at: new Date().toISOString() })
+    });
+  } catch(e) { console.error('roomSet', e); }
 }
 
 // ══════════════════════════════════════════
@@ -296,19 +250,14 @@ let myStories = [], currentStoryNum = 0, guessedThisRound = false;
 let shuffledOpts = [], lastStoryIdx = -1, pollTimer = null;
 let currentScreen = 'home';
 
-// ══════════════════════════════════════════
-//  UI Helpers
-// ══════════════════════════════════════════
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + name).classList.add('active');
   currentScreen = name;
 }
-
 function showErr(id, msg) {
   const el = document.getElementById(id);
-  el.textContent = msg;
-  el.classList.add('show');
+  el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 4000);
 }
 
@@ -320,7 +269,7 @@ function startPoll(code) {
   pollTimer = setInterval(async () => {
     const r = await roomGet(code);
     if (r) applyRoomState(r);
-  }, 3000);
+  }, 2000);
 }
 function stopPoll() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
@@ -331,73 +280,45 @@ function stopPoll() {
 // ══════════════════════════════════════════
 function applyRoomState(r) {
   room = r;
-
-  if (r.phase === 'lobby' && currentScreen === 'lobby') {
-    renderLobby();
-  }
-
+  if (r.phase === 'lobby' && currentScreen === 'lobby') renderLobby();
   if (r.phase === 'lobby' && currentScreen === 'scores') {
-    lastStoryIdx = -1;
-    renderLobby();
-    showScreen('lobby');
-    startPoll(roomCode);
+    lastStoryIdx = -1; renderLobby(); showScreen('lobby'); startPoll(roomCode);
   }
-
   if (r.phase === 'writing' && currentScreen !== 'write') {
-    myStories = []; currentStoryNum = 0;
-    renderWrite();
-    showScreen('write');
+    myStories = []; currentStoryNum = 0; renderWrite(); showScreen('write');
   }
-
   if (r.phase === 'writing' && amHost) {
-    const totalExpected = r.players.length * STORIES_PER_PLAYER;
     const allDone = r.players.every(p => (p.storiesSubmitted || 0) >= STORIES_PER_PLAYER);
-    if (allDone && r.stories.length >= totalExpected) {
-      autoStartGuessing();
-    }
+    if (allDone && r.stories.length >= r.players.length * STORIES_PER_PLAYER) autoStartGuessing();
     if (currentStoryNum >= STORIES_PER_PLAYER) updateWriteWait();
   }
-
   if (r.phase === 'guessing') {
     const idx = r.currentStory;
     if (idx !== lastStoryIdx || currentScreen !== 'guess') {
-      lastStoryIdx = idx;
-      guessedThisRound = false;
+      lastStoryIdx = idx; guessedThisRound = false;
       shuffledOpts = [...r.players].sort(() => Math.random() - 0.5);
-      renderGuess();
-      showScreen('guess');
-    } else {
-      updateGuessVoteCount();
-    }
+      renderGuess(); showScreen('guess');
+    } else { updateGuessVoteCount(); }
   }
-
   if (r.phase === 'scores' && currentScreen !== 'scores') {
-    stopPoll();
-    renderScores();
-    showScreen('scores');
+    stopPoll(); renderScores(); showScreen('scores');
   }
 }
 
 async function autoStartGuessing() {
   const fresh = await roomGet(roomCode);
   if (!fresh || fresh.phase !== 'writing') return;
-  const totalExpected = fresh.players.length * STORIES_PER_PLAYER;
-  if (fresh.stories.length < totalExpected) return;
+  if (fresh.stories.length < fresh.players.length * STORIES_PER_PLAYER) return;
   fresh.shuffledStories = [...fresh.stories].sort(() => Math.random() - 0.5);
-  fresh.currentStory = 0;
-  fresh.phase = 'guessing';
-  fresh.guesses = {};
+  fresh.currentStory = 0; fresh.phase = 'guessing'; fresh.guesses = {};
   await roomSet(roomCode, fresh);
-  room = fresh;
-  lastStoryIdx = 0;
-  guessedThisRound = false;
+  room = fresh; lastStoryIdx = 0; guessedThisRound = false;
   shuffledOpts = [...fresh.players].sort(() => Math.random() - 0.5);
-  renderGuess();
-  showScreen('guess');
+  renderGuess(); showScreen('guess');
 }
 
 // ══════════════════════════════════════════
-//  Create Room
+//  Create / Join
 // ══════════════════════════════════════════
 async function createRoom() {
   const name = document.getElementById('home-name').value.trim();
@@ -405,20 +326,15 @@ async function createRoom() {
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const r = {
     code, host: name, phase: 'lobby',
-    players: [{name, avatar: AVATARS[0], storySubmitted: false}],
+    players: [{name, avatar: AVATARS[0], storiesSubmitted: 0}],
     stories: [], shuffledStories: [], scores: {[name]: 0},
     currentStory: 0, guesses: {}, created: Date.now()
   };
   await roomSet(code, r);
   myName = name; roomCode = code; amHost = true; room = r;
-  renderLobby();
-  showScreen('lobby');
-  startPoll(code);
+  renderLobby(); showScreen('lobby'); startPoll(code);
 }
 
-// ══════════════════════════════════════════
-//  Join Room
-// ══════════════════════════════════════════
 async function joinRoom() {
   const name = document.getElementById('home-name').value.trim();
   const code = document.getElementById('home-code').value.trim();
@@ -428,18 +344,15 @@ async function joinRoom() {
   if (!r) { showErr('home-err', '❌ الغرفة مو موجودة'); return; }
   if (r.phase !== 'lobby') { showErr('home-err', '⚠️ اللعبة بدأت'); return; }
   if (r.players.find(p => p.name === name)) { showErr('home-err', '⚠️ الاسم موجود، غيّر اسمك'); return; }
-  const avatar = AVATARS[r.players.length % AVATARS.length];
-  r.players.push({name, avatar, storySubmitted: false});
+  r.players.push({name, avatar: AVATARS[r.players.length % AVATARS.length], storiesSubmitted: 0});
   r.scores[name] = 0;
   await roomSet(code, r);
   myName = name; roomCode = code; amHost = false; room = r;
-  renderLobby();
-  showScreen('lobby');
-  startPoll(code);
+  renderLobby(); showScreen('lobby'); startPoll(code);
 }
 
 // ══════════════════════════════════════════
-//  Render Lobby
+//  Lobby
 // ══════════════════════════════════════════
 function renderLobby() {
   const r = room;
@@ -450,44 +363,33 @@ function renderLobby() {
   (r?.players || []).forEach(p => {
     const div = document.createElement('div');
     div.className = 'player-item';
-    div.innerHTML = `
-      <div class="player-avatar">${p.avatar}</div>
-      <div class="player-name">${p.name}</div>
-      <span style="font-size:12px;color:${p.name===r.host?'var(--yellow)':'var(--teal)'}">
-        ${p.name===r.host ? '👑 مضيف' : '✅ جاهز'}
-      </span>`;
+    div.innerHTML = `<div class="player-avatar">${p.avatar}</div><div class="player-name">${p.name}</div>
+      <span style="font-size:12px;color:${p.name===r.host?'var(--yellow)':'var(--teal)'}">${p.name===r.host?'👑 مضيف':'✅ جاهز'}</span>`;
     list.appendChild(div);
   });
   if (amHost) {
     document.getElementById('lobby-host-area').style.display = 'block';
     document.getElementById('lobby-wait-area').style.display = 'none';
     const btn = document.getElementById('start-btn');
-    if (!r || r.players.length < 2) {
-      btn.disabled = true; btn.textContent = '⏳ انتظر لاعب ثاني...';
-    } else {
-      btn.disabled = false; btn.textContent = `🚀 ابدأ اللعبة (${r.players.length} لاعبين)`;
-    }
+    btn.disabled = !r || r.players.length < 2;
+    btn.textContent = r?.players?.length < 2 ? '⏳ انتظر لاعب ثاني...' : `🚀 ابدأ اللعبة (${r.players.length} لاعبين)`;
   } else {
     document.getElementById('lobby-host-area').style.display = 'none';
     document.getElementById('lobby-wait-area').style.display = 'block';
   }
 }
 
-// ══════════════════════════════════════════
-//  Start Game
-// ══════════════════════════════════════════
 async function startGame() {
   const r = await roomGet(roomCode);
   if (!r) return;
   r.phase = 'writing'; r.stories = []; r.shuffledStories = []; r.guesses = {}; r.currentStory = 0;
   r.players.forEach(p => { p.storiesSubmitted = 0; r.scores[p.name] = 0; });
   await roomSet(roomCode, r);
-  room = r; myStories = []; currentStoryNum = 0;
-  renderWrite(); showScreen('write');
+  room = r; myStories = []; currentStoryNum = 0; renderWrite(); showScreen('write');
 }
 
 // ══════════════════════════════════════════
-//  Render Write
+//  Write
 // ══════════════════════════════════════════
 function renderWrite() {
   document.getElementById('write-name-badge').textContent = '👤 ' + myName;
@@ -496,21 +398,16 @@ function renderWrite() {
   document.getElementById('write-wait-area').style.display = done ? 'block' : 'none';
   if (!done) {
     document.getElementById('story-input').value = '';
-    document.getElementById('write-story-counter').textContent = `السالفة ${currentStoryNum + 1} من ${STORIES_PER_PLAYER}`;
+    document.getElementById('write-story-counter').textContent = `السالفة ${currentStoryNum+1} من ${STORIES_PER_PLAYER}`;
     const isLast = currentStoryNum === STORIES_PER_PLAYER - 1;
-    document.getElementById('submit-story-btn').textContent = isLast ? 'إرسال آخر سالفة ✓' : `إرسال والتالي (${currentStoryNum + 1}/${STORIES_PER_PLAYER}) →`;
+    document.getElementById('submit-story-btn').textContent = isLast ? 'إرسال آخر سالفة ✓' : `إرسال والتالي (${currentStoryNum+1}/${STORIES_PER_PLAYER}) →`;
   }
 }
 function updateWriteWait() {
   if (!room) return;
-  const done = room.players.filter(p => (p.storiesSubmitted || 0) >= STORIES_PER_PLAYER).length;
-  document.getElementById('write-wait-text').textContent =
-    `أرسلت كل سوالفك! بانتظار بقية اللاعبين... (${done}/${room.players.length})`;
+  const done = room.players.filter(p => (p.storiesSubmitted||0) >= STORIES_PER_PLAYER).length;
+  document.getElementById('write-wait-text').textContent = `أرسلت كل سوالفك! بانتظار بقية اللاعبين... (${done}/${room.players.length})`;
 }
-
-// ══════════════════════════════════════════
-//  Submit Story
-// ══════════════════════════════════════════
 async function submitStory() {
   const text = document.getElementById('story-input').value.trim();
   if (text.length < 10) { showErr('write-err', '⚠️ اكتب سالفة أطول شوي!'); return; }
@@ -518,17 +415,15 @@ async function submitStory() {
   if (!r) return;
   r.stories.push({player: myName, text});
   const me = r.players.find(p => p.name === myName);
-  if (me) me.storiesSubmitted = (me.storiesSubmitted || 0) + 1;
+  if (me) me.storiesSubmitted = (me.storiesSubmitted||0) + 1;
   await roomSet(roomCode, r);
-  room = r;
-  myStories.push(text);
-  currentStoryNum++;
+  room = r; myStories.push(text); currentStoryNum++;
   renderWrite();
   if (currentStoryNum >= STORIES_PER_PLAYER) updateWriteWait();
 }
 
 // ══════════════════════════════════════════
-//  Render Guess
+//  Guess
 // ══════════════════════════════════════════
 function renderGuess() {
   if (!room) return;
@@ -549,8 +444,7 @@ function renderGuess() {
       btn.disabled = true;
       const correct = story?.player;
       if (p.name === correct) { btn.classList.add('correct'); btn.innerHTML += '<span style="margin-right:auto">✓</span>'; }
-      const myGuess = room.guesses?.[idx]?.[myName];
-      if (p.name === myGuess && p.name !== correct) btn.classList.add('wrong');
+      if (room.guesses?.[idx]?.[myName] === p.name && p.name !== correct) btn.classList.add('wrong');
     }
     opts.appendChild(btn);
   });
@@ -559,28 +453,18 @@ function renderGuess() {
   document.getElementById('guess-next-wait').style.display = 'none';
   updateGuessVoteCount();
 }
-
 function updateGuessVoteCount() {
-  if (!room) return;
+  if (!room || !guessedThisRound) return;
   const idx = room.currentStory;
   const voters = room.players.length - 1;
-  const guessCount = Object.keys(room.guesses?.[idx] || {}).length;
-  if (guessedThisRound) {
-    document.getElementById('guess-vote-count').textContent = `خمّن ${guessCount}/${voters}`;
-    const total = room.shuffledStories?.length || 1;
-    const nextBtn = document.getElementById('next-btn');
-    if (nextBtn) nextBtn.textContent = idx+1 < total ? 'التالي ←' : '🏆 النتائج';
-    if (amHost) {
-      document.getElementById('guess-next-host').style.display = 'block';
-    } else if (guessCount >= voters) {
-      document.getElementById('guess-next-wait').style.display = 'block';
-    }
-  }
+  const guessCount = Object.keys(room.guesses?.[idx]||{}).length;
+  document.getElementById('guess-vote-count').textContent = `خمّن ${guessCount}/${voters}`;
+  const total = room.shuffledStories?.length || 1;
+  const nextBtn = document.getElementById('next-btn');
+  if (nextBtn) nextBtn.textContent = idx+1 < total ? 'التالي ←' : '🏆 النتائج';
+  if (amHost) document.getElementById('guess-next-host').style.display = 'block';
+  else if (guessCount >= voters) document.getElementById('guess-next-wait').style.display = 'block';
 }
-
-// ══════════════════════════════════════════
-//  Make Guess
-// ══════════════════════════════════════════
 async function makeGuess(guessed) {
   if (guessedThisRound || !room) return;
   guessedThisRound = true;
@@ -591,41 +475,29 @@ async function makeGuess(guessed) {
   if (!fresh.guesses[idx]) fresh.guesses[idx] = {};
   fresh.guesses[idx][myName] = guessed;
   if (guessed === correct && myName !== correct)
-    fresh.scores[myName] = (fresh.scores[myName] || 0) + 1;
+    fresh.scores[myName] = (fresh.scores[myName]||0) + 1;
   await roomSet(roomCode, fresh);
   room = fresh;
-
-  // Update buttons
   document.querySelectorAll('.guess-btn').forEach((btn, i) => {
     btn.onclick = null; btn.disabled = true;
     const p = shuffledOpts[i];
     if (p.name === correct) { btn.classList.add('correct'); btn.innerHTML = `<span class="guess-num">${i+1}</span>${p.name}<span style="margin-right:auto">✓</span>`; }
     if (p.name === guessed && p.name !== correct) btn.classList.add('wrong');
   });
-
   const toast = document.getElementById('guess-toast');
-  if (guessed === correct) {
-    toast.textContent = `✅ صح! السالفة لـ ${correct} 🎉`; toast.className = 'toast show win';
-  } else {
-    toast.textContent = `❌ غلط! السالفة كانت لـ ${correct} 😅`; toast.className = 'toast show lose';
-  }
+  toast.textContent = guessed === correct ? `✅ صح! السالفة لـ ${correct} 🎉` : `❌ غلط! السالفة كانت لـ ${correct} 😅`;
+  toast.className = `toast show ${guessed === correct ? 'win' : 'lose'}`;
   updateGuessVoteCount();
 }
-
-// ══════════════════════════════════════════
-//  Next Round
-// ══════════════════════════════════════════
 async function nextRound() {
   if (!amHost) return;
   const r = await roomGet(roomCode);
   const nextIdx = r.currentStory + 1;
   if (nextIdx >= r.shuffledStories.length) {
-    r.phase = 'scores';
-    await roomSet(roomCode, r);
+    r.phase = 'scores'; await roomSet(roomCode, r);
     room = r; stopPoll(); renderScores(); showScreen('scores');
   } else {
-    r.currentStory = nextIdx; r.phase = 'guessing';
-    await roomSet(roomCode, r);
+    r.currentStory = nextIdx; r.phase = 'guessing'; await roomSet(roomCode, r);
     room = r; lastStoryIdx = nextIdx; guessedThisRound = false;
     shuffledOpts = [...r.players].sort(() => Math.random() - 0.5);
     renderGuess(); showScreen('guess');
@@ -633,17 +505,17 @@ async function nextRound() {
 }
 
 // ══════════════════════════════════════════
-//  Render Scores
+//  Scores
 // ══════════════════════════════════════════
 function renderScores() {
-  const sorted = Object.entries(room.scores || {}).sort((a,b) => b[1]-a[1]);
+  const sorted = Object.entries(room.scores||{}).sort((a,b)=>b[1]-a[1]);
   const medals = ['🥇','🥈','🥉'];
   document.getElementById('winner-line').textContent = sorted[0] ? `🎉 الفائز: ${sorted[0][0]}!` : '';
   const list = document.getElementById('scores-list');
   list.innerHTML = '';
-  sorted.forEach(([name, pts], i) => {
+  sorted.forEach(([name,pts],i) => {
     const div = document.createElement('div');
-    div.className = 'score-item' + (i===0?' first':'');
+    div.className = 'score-item'+(i===0?' first':'');
     div.style.animationDelay = `${i*0.08}s`;
     div.innerHTML = `<span class="score-medal">${medals[i]||'🎖️'}</span><span class="score-name">${name}</span><span class="score-pts">${pts} نقطة</span>`;
     list.appendChild(div);
@@ -651,10 +523,6 @@ function renderScores() {
   document.getElementById('scores-host-area').style.display = amHost ? 'block' : 'none';
   document.getElementById('scores-wait-area').style.display = amHost ? 'none' : 'block';
 }
-
-// ══════════════════════════════════════════
-//  Play Again
-// ══════════════════════════════════════════
 async function playAgain() {
   const r = await roomGet(roomCode);
   r.phase='lobby'; r.stories=[]; r.shuffledStories=[]; r.guesses={}; r.currentStory=0;
@@ -663,18 +531,12 @@ async function playAgain() {
   room=r; lastStoryIdx=-1; myStories=[]; currentStoryNum=0;
   renderLobby(); showScreen('lobby'); startPoll(roomCode);
 }
-
-// ══════════════════════════════════════════
-//  Go Home
-// ══════════════════════════════════════════
 function goHome() {
-  stopPoll();
-  myName=''; roomCode=''; amHost=false; room=null;
+  stopPoll(); myName=''; roomCode=''; amHost=false; room=null;
   document.getElementById('home-name').value='';
   document.getElementById('home-code').value='';
   lastStoryIdx=-1; showScreen('home');
 }
-
 function copyCode() {
   navigator.clipboard.writeText(roomCode).then(() => {
     const btn = document.getElementById('copy-btn');
