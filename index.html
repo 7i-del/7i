@@ -239,6 +239,45 @@ async function roomSet(code, data) {
   } catch(e) { console.error('roomSet', e); }
 }
 
+// ── Realtime via Supabase WebSocket ──
+let realtimeWs = null;
+function startRealtime(code) {
+  stopRealtime();
+  const wsUrl = `wss://llflcxehgyaoeeayoise.supabase.co/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+  realtimeWs = new WebSocket(wsUrl);
+  realtimeWs.onopen = () => {
+    realtimeWs.send(JSON.stringify({
+      topic: `realtime:public:rooms:code=eq.${code}`,
+      event: 'phx_join',
+      payload: { config: { postgres_changes: [{ event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }] } },
+      ref: '1'
+    }));
+  };
+  realtimeWs.onmessage = async (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.event === 'postgres_changes') {
+        const newData = msg.payload?.data?.record?.data;
+        if (newData) applyRoomState(newData);
+        else { const r = await roomGet(code); if (r) applyRoomState(r); }
+      }
+    } catch(err) {}
+  };
+  realtimeWs._hb = setInterval(() => {
+    if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN)
+      realtimeWs.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: '0' }));
+  }, 25000);
+  // Fallback poll every 3s
+  pollTimer = setInterval(async () => {
+    const r = await roomGet(code);
+    if (r) applyRoomState(r);
+  }, 3000);
+}
+function stopRealtime() {
+  if (realtimeWs) { clearInterval(realtimeWs._hb); realtimeWs.close(); realtimeWs = null; }
+  stopPoll();
+}
+
 // ══════════════════════════════════════════
 //  Game State
 // ══════════════════════════════════════════
@@ -264,7 +303,7 @@ function showErr(id, msg) {
 // ══════════════════════════════════════════
 //  Polling
 // ══════════════════════════════════════════
-function startPoll(code) {
+function startRealtime(code) {
   stopPoll();
   pollTimer = setInterval(async () => {
     const r = await roomGet(code);
@@ -282,7 +321,7 @@ function applyRoomState(r) {
   room = r;
   if (r.phase === 'lobby' && currentScreen === 'lobby') renderLobby();
   if (r.phase === 'lobby' && currentScreen === 'scores') {
-    lastStoryIdx = -1; renderLobby(); showScreen('lobby'); startPoll(roomCode);
+    lastStoryIdx = -1; renderLobby(); showScreen('lobby'); startRealtime(roomCode);
   }
   if (r.phase === 'writing' && currentScreen !== 'write') {
     myStories = []; currentStoryNum = 0; renderWrite(); showScreen('write');
@@ -301,7 +340,7 @@ function applyRoomState(r) {
     } else { updateGuessVoteCount(); }
   }
   if (r.phase === 'scores' && currentScreen !== 'scores') {
-    stopPoll(); renderScores(); showScreen('scores');
+    stopRealtime(); renderScores(); showScreen('scores');
   }
 }
 
@@ -332,7 +371,7 @@ async function createRoom() {
   };
   await roomSet(code, r);
   myName = name; roomCode = code; amHost = true; room = r;
-  renderLobby(); showScreen('lobby'); startPoll(code);
+  renderLobby(); showScreen('lobby'); startRealtime(code);
 }
 
 async function joinRoom() {
@@ -348,7 +387,7 @@ async function joinRoom() {
   r.scores[name] = 0;
   await roomSet(code, r);
   myName = name; roomCode = code; amHost = false; room = r;
-  renderLobby(); showScreen('lobby'); startPoll(code);
+  renderLobby(); showScreen('lobby'); startRealtime(code);
 }
 
 // ══════════════════════════════════════════
@@ -495,7 +534,7 @@ async function nextRound() {
   const nextIdx = r.currentStory + 1;
   if (nextIdx >= r.shuffledStories.length) {
     r.phase = 'scores'; await roomSet(roomCode, r);
-    room = r; stopPoll(); renderScores(); showScreen('scores');
+    room = r; stopRealtime(); renderScores(); showScreen('scores');
   } else {
     r.currentStory = nextIdx; r.phase = 'guessing'; await roomSet(roomCode, r);
     room = r; lastStoryIdx = nextIdx; guessedThisRound = false;
@@ -529,10 +568,10 @@ async function playAgain() {
   r.players.forEach(p => { p.storiesSubmitted=0; r.scores[p.name]=0; });
   await roomSet(roomCode, r);
   room=r; lastStoryIdx=-1; myStories=[]; currentStoryNum=0;
-  renderLobby(); showScreen('lobby'); startPoll(roomCode);
+  renderLobby(); showScreen('lobby'); startRealtime(roomCode);
 }
 function goHome() {
-  stopPoll(); myName=''; roomCode=''; amHost=false; room=null;
+  stopRealtime(); myName=''; roomCode=''; amHost=false; room=null;
   document.getElementById('home-name').value='';
   document.getElementById('home-code').value='';
   lastStoryIdx=-1; showScreen('home');
